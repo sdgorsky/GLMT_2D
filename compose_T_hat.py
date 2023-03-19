@@ -65,9 +65,9 @@ class matrix_calculator:
         Np = len(self.particles)
         Nell = 2*self.Lmax + 1
 
+        ell_vec = range(-self.Lmax, self.Lmax+1)
+
         s = np.zeros((Np,Nell), dtype=complex)
-        #t = np.zeros((Np,Nell), dtype=complex)
-        gamma = np.zeros((Np,Nell), dtype=complex)
         a0E = np.zeros((Np,Nell), dtype=complex)
         a0_hat = np.zeros((Np,Nell), dtype=complex)
         a = np.zeros((Np,Nell), dtype=complex)
@@ -80,26 +80,19 @@ class matrix_calculator:
 
             kor = ko*p["r"]
             knr = kn*p["r"]
-            xin = 1.0
+            xin = 1.0 # Incomplete. Correct only non-magnetic TM waves
             coeff = xin*kn/ko
 
 
             th = self.source.theta
             
-            for ell in range(-self.Lmax, self.Lmax+1):
-
-                
+            for ell in ell_vec:
 
                 gamma = coeff * Jp(ell, knr) / J(ell, knr)
 
                 num = Jp(ell, kor) - gamma * J(ell, kor)
                 den = Hp(ell, kor) - gamma * H(ell, kor)
                 s[n][ell] = -num/den
-
-
-                num = coeff*Hp(ell, knr) - gamma*H(ell, knr)
-                den = Hp(ell, kor) - gamma*H(ell, kor)
-                #t[i][ell] = num/den
 
                 atmp = cmath.exp(1j*ko*(p["x"]*math.cos(th) + p["y"]*math.sin(th)))
                 btmp = cmath.exp(-1j*ell*th)
@@ -108,20 +101,18 @@ class matrix_calculator:
                 a0_hat[n][ell] = s[n][ell]*a0E[n][ell] / J(ell, kor)
 
 
-        T = np.identity(len(self.particles)*(2*self.Lmax+1), dtype=complex)
+        T_hat = np.identity(len(self.particles)*(2*self.Lmax+1), dtype=complex)
 
         Np = len(self.particles)
         Nell = 2*self.Lmax + 1
         for n in range(Np):
             for npr in range(Np):
                 if n != npr:
-                    for lidx, ell in enumerate(range(-self.Lmax, self.Lmax+1)):
-                        for lidxp, ellp in enumerate(range(-self.Lmax, self.Lmax+1)):
+                    for lidx, ell in enumerate(ell_vec):
+                        for lidxp, ellp in enumerate(ell_vec):
 
-
-                            i = (n-1)*Nell  + lidx
-                            k = (npr-1)*Nell + lidxp
-
+                            i = n*Nell  + lidx
+                            k = npr*Nell + lidxp
 
                             x = self.particles[n]["x"]
                             y = self.particles[n]["y"]
@@ -135,16 +126,29 @@ class matrix_calculator:
                             phi = math.atan2(yp-y, xp-x)
                             phase = cmath.exp(1j*(ellp-ell)*phi)
 
-                            T[k][i] = -phase*H(ell-ellp, ko*R)*s[n][ell]*Jp(ellp, ko*rp)/J(ell, ko*r)
+                            T_hat[i][k] = -phase*H(ell-ellp, ko*R)*s[n][ell]*J(ellp, ko*rp)/J(ell, ko*r)
 
+        plt.matshow(np.log10(np.abs(T_hat)), vmin=-15, vmax=6)
+        plt.colorbar()
 
-        Tinv = np.linalg.inv(T)
+        plt.savefig("temp.png")
+        #raise Exception
 
-        bhat = np.matmul(Tinv, a0_hat.reshape(-1))
+        #print()
+        #print(a0_hat[0])
+        #print()
+        #tmp = np.roll(a0_hat, 1, axis=1)
+        #print(tmp[0])
+        #raise Exception
+        T_hat_inv = np.linalg.inv(T_hat)
+        a0_hat = np.roll(a0_hat, self.Lmax, axis=1) 
+        bhat = np.matmul(T_hat_inv, a0_hat.reshape(-1))
         bhat = bhat.reshape(Np,Nell)
+        bhat = np.roll(bhat, -self.Lmax, axis=1)
+
 
         for n in range(len(self.particles)):
-            for ell in range(-self.Lmax,self.Lmax+1):
+            for ell in ell_vec:
 
                 r = self.particles[n]["r"]
                 kn = ko*np.sqrt(self.particles[n]["epsr"])
@@ -155,14 +159,18 @@ class matrix_calculator:
                 c[n][ell] = (a[n][ell]*J(ell, ko*r) + b[n][ell]*H(ell, ko*r)) / J(ell, kn*r)
 
 
-        print(c)
+        print("b")
+        print(b[0])
+
+        print("\nc")
+        print(c[0])
         self.b = b
         self.c = c
 
 
     def calc_fields(self):
 
-        coords = PlotField(Nx=128,Ny=128,Lx=5,Ly=5,particles=self.particles)
+        coords = PlotField(Nx=256,Ny=256,Lx=8,Ly=8,particles=self.particles)
 
         src = self.calc_phiz_src()
         sca = self.calc_phiz_sca()
@@ -191,7 +199,7 @@ class matrix_calculator:
 
         print("Calculating phi_z_src")
 
-        coords = PlotField(Nx=128,Ny=128,Lx=5,Ly=5,particles=self.particles)
+        coords = PlotField(Nx=256,Ny=256,Lx=8,Ly=8,particles=self.particles)
 
         x = coords.exterior_pts["x"]
         y = coords.exterior_pts["y"]
@@ -209,7 +217,7 @@ class matrix_calculator:
 
         print("Calculating phi_z_sca")
 
-        coords = PlotField(Nx=128,Ny=128,Lx=5,Ly=5,particles=self.particles)
+        coords = PlotField(Nx=256,Ny=256,Lx=8,Ly=8,particles=self.particles)
 
         x = coords.exterior_pts["x"]
         y = coords.exterior_pts["y"]
@@ -229,7 +237,6 @@ class matrix_calculator:
 
                 phiz_sca += [b[n][ell]*H(ell, ko*rho)*cmath.exp(1j*ell*th) for (rho,th) in zip(rhon, thn)]
 
-        
         plt.clf()
         plt.scatter(x, y, c=np.real(phiz_sca))
         plt.colorbar()
@@ -242,7 +249,7 @@ class matrix_calculator:
 
         print("Calculating phi_z_int")
 
-        coords = PlotField(Nx=128,Ny=128,Lx=5,Ly=5,particles=self.particles)
+        coords = PlotField(Nx=256,Ny=256,Lx=8,Ly=8,particles=self.particles)
 
         ko = 2*math.pi/self.wavelength
 
@@ -276,11 +283,11 @@ class matrix_calculator:
 
 def Jp(nu, x):
     """ First derivative of Bessel-J"""
-    return x*(J(nu-1,x) - J(nu+1,x))/2
+    return (J(nu-1,x) - J(nu+1,x))/2
 
 def Hp(nu, x):
     """ First derivative of Bessel-H(1)"""
-    return x*(H(nu-1,x) - H(nu+1,x))/2
+    return (H(nu-1,x) - H(nu+1,x))/2
 
 
 
@@ -289,24 +296,22 @@ if __name__ == "__main__":
 
     particles = [
         {
-            "x": -1.5,
-            "y": 0.5,
-            "r": 0.5,
-            "epsr": 2.2
+            "x": -1.25,
+            "y": 0.0,
+            "r": 1.0,
+            "epsr": 2.0,
         },
         {
-            "x": 0.6,
-            "y": -0.25,
-            "r": 0.25,
-            "n": 1.5,
-            "epsr": 5
+            "x": 1.25,
+            "y": 0.0,
+            "r": 1.0,
+            "epsr": 2.0
         },
         {
-            "x": 0.2,
-            "y": 2.0,
-            "r": 0.25,
-            "n": 1.5,
-            "epsr": 5.5
+            "x": 0.0,
+            "y": 2.5*np.sqrt(3)/2,
+            "r": 1,
+            "epsr": 2.0
         }
 
     ]
@@ -314,8 +319,9 @@ if __name__ == "__main__":
 
     obj = matrix_calculator(
         particles = particles,
-        wavelength = 0.5,
-        Lmax=20
+        wavelength = 2*3.14/5.3779,
+        Lmax=10
+
 
 
     )
